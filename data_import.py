@@ -59,7 +59,7 @@ df = pd.DataFrame()
 
 
 #for (path, dir, files) in os.walk("./Data/"):
-for (path, dir, files) in os.walk(".DX_team_4_repo/Data/"):
+for (path, dir, files) in os.walk("./DX_team_4_repo/Data/"):
                 
         for filename in files:
              ext = os.path.splitext(filename)[-1]  # 확장자가 txt 이면...
