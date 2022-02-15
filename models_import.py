@@ -1,6 +1,6 @@
 
 
-def my_models(features_all,log_en):
+def my_models(features_all,log_en,external_test_data=0,features_test=[]):
 
     """입출력"""
     import os
@@ -40,6 +40,13 @@ def my_models(features_all,log_en):
     """x,y 정의"""
     x=features_all.drop('class',axis=1)
     y=features_all['class']
+  
+
+    external_test_x=features_test.drop('class',axis=1)
+    external_test_y=features_test['class']
+    
+    
+    
     class_list=np.array(['idle', 'suit_1','suit_2','suit_3','suit_4','suit_5','shirt_1','shirt_2','shirt_3',
                 'shirt_4','shirt_5','coat_1','coat_2','coat_3','coat_4','coat_5'])
     """class를 숫자로 변환 for pytorch"""
@@ -52,14 +59,32 @@ def my_models(features_all,log_en):
 
     y=np.array(y_number).reshape(-1,)
     y=pd.Series(y)
+    
+    y_number=[]
+    for i in external_test_y:
+        y_tmp=(np.where(i == class_list))[0][0]    # [0][0] 추가해서 데이터만 추출
+        #print (i,y_tmp)
+        y_number.append(y_tmp)
+        #print(i,y_tmp[0][0])
+
+    external_test_y=np.array(y_number).reshape(-1,)
+    external_test_y=pd.Series(external_test_y)
+    
+    
+    
 
     if log_en==1:
         # 데이터 shape check  (AAA,00) (000,)
         print(x.shape,y.shape)
-
         display(x.head())
         display(y.head())
-
+        print(external_test_x.shape,external_test_y.shape)
+        display(external_test_x.head())
+        display(external_test_y.head())
+        
+        
+        
+        
     """>>## 데이터셑/Scaler"""
 
     """데이터셑 나누기"""
@@ -67,6 +92,13 @@ def my_models(features_all,log_en):
     train_x, test_x, train_y, test_y = train_test_split(x, y, stratify=y, test_size=0.2,random_state=seed_no)
     # train, validation
     train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y, stratify=train_y, test_size=0.2,random_state=seed_no)
+ 
+
+    if (external_test_data):
+        test_x = external_test_x
+        test_y = external_test_y
+    
+    
     
     if log_en==1:
         print(f"학습 데이터셋 크기 : {train_x.shape}, 검증 데이터셋 크기 : {valid_x.shape}, 테스트 데이터셋 크기 : {test_x.shape}")
@@ -76,7 +108,7 @@ def my_models(features_all,log_en):
     scaler.fit(train_x)
     train_x = pd.DataFrame(scaler.transform(train_x))
     valid_x = pd.DataFrame(scaler.transform(valid_x))
-    test_x = pd.DataFrame(scaler.transform(test_x))
+    test_x  = pd.DataFrame(scaler.transform( test_x))
 
     if log_en==1:
 
@@ -750,17 +782,7 @@ def my_models(features_all,log_en):
         """Data Augmentation 유/무, 모형별, Accuracy 비교"""
         print(f"DNN: {Acc_DNN:.3f}, MLP:{Acc_MLP:.3f}, DTree:{Acc_TREE:.3f}, KNN:{Acc_KNN:.3f}, AdaBoost: {Acc_Ensemble:.3f}, RandomForest: {Acc_RForest:.3f}")
 
-    # No Data Augmentation
-    # DNN: 0.872, MLP:0.842, DTree:0.744, KNN:0.789, AdaBoost: 0.556, RandomForest: 0.872
 
-    # Data Augmentation
-    # DNN: 0.882, MLP:0.882, DTree:0.729, KNN:0.857, AdaBoost: 0.490, RandomForest: 0.862  (jittering sigma = 0.05,  MagWarp = 0.2)
-    # DNN: 0.977, MLP:0.967, DTree:0.854, KNN:0.960, AdaBoost: 0.686, RandomForest: 0.950  (jittering sigma = 0.005, MagWarp = 0.2)
-    # DNN: 0.975, MLP:0.967, DTree:0.859, KNN:0.960, AdaBoost: 0.704, RandomForest: 0.975  (jittering sigma = 0.005, MagWarp = 0.05)
-    # DNN: 0.992, MLP:0.987, DTree:0.900, KNN:0.985, AdaBoost: 0.666, RandomForest: 0.958  (jittering sigma = 0.005, MagWarp = 0.05, Scaling = 0.1)
-    # DNN: 0.985, MLP:0.979, DTree:0.903, KNN:0.985, AdaBoost: 0.745, RandomForest: 0.937  (jittering sigma = 0.005, MagWarp = 0.05, Scaling = 0.025, Combination = (0.1,0.01))
-    
-    
     return Acc_DNN,Acc_MLP,Acc_TREE,Acc_KNN,Acc_Ensemble, Acc_RForest
 
 
