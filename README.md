@@ -9,7 +9,7 @@
 * 별도의(처음본) Test Data를 추가로 획득하여, Test Accuracy를 비교함. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/caplove/DX_team_4_repo/blob/main/Team_4_Augment_DNN_simple.ipynb)
 
 
-3차 (3월) Data Augmentation 과 CNN계열 NN Accuracy 비교
+3차 (3월) Data Augmentation 과 CNN계열 Accuracy 비교
 * 1D CNN,GRU,Inception 모형 기반 Test Accuracy 비교 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/caplove/DX_team_4_repo/blob/main/Team_4_Augment_DNN_simple2.ipynb)
 
 
