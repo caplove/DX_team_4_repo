@@ -524,338 +524,338 @@ def my_models_2(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
     
     
     
-    """# GRU /w Attention"""
+#     """# GRU /w Attention"""
 
-    # 모듈 불러오기
-    import os
-    import time
-    import copy
-    import random
-    # import pickle       # 데이터 저장형태가 pickle일 경우 사용함
-    import numpy as np
+#     # 모듈 불러오기
+#     import os
+#     import time
+#     import copy
+#     import random
+#     # import pickle       # 데이터 저장형태가 pickle일 경우 사용함
+#     import numpy as np
 
-    import torch
-    import torch.nn as nn
-    import torch.optim as optim
-    import torch.nn.functional as F
+#     import torch
+#     import torch.nn as nn
+#     import torch.optim as optim
+#     import torch.nn.functional as F
 
-    # Hyperparameter setting
-    batch_size = 32
-    num_classes = 16
-    num_epochs = 400
-    window_size = 400  # 몇 시점의 데이터를 넣을것인가.
-    input_size = 7     # 7개의 변수  (7차원)
-    hidden_size = 64    # hidden layer의 차원은 (64차원)
-    num_layers = 2
-    bidirectional = True
+#     # Hyperparameter setting
+#     batch_size = 32
+#     num_classes = 16
+#     num_epochs = 400
+#     window_size = 400  # 몇 시점의 데이터를 넣을것인가.
+#     input_size = 7     # 7개의 변수  (7차원)
+#     hidden_size = 64    # hidden layer의 차원은 (64차원)
+#     num_layers = 2
+#     bidirectional = True
 
-    random_seed = 42
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # Detect if we have a GPU available
+#     random_seed = 42
+#     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # Detect if we have a GPU available
 
-    # seed 고정
-    torch.manual_seed(random_seed)
-    torch.cuda.manual_seed(random_seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    np.random.seed(random_seed)
-    random.seed(random_seed)
+#     # seed 고정
+#     torch.manual_seed(random_seed)
+#     torch.cuda.manual_seed(random_seed)
+#     torch.backends.cudnn.deterministic = True
+#     torch.backends.cudnn.benchmark = False
+#     np.random.seed(random_seed)
+#     random.seed(random_seed)
 
-    """## 모형 설계
+#     """## 모형 설계
 
-    """
+#     """
 
-    class Attention(nn.Module):
-        def __init__(self, device, hidden_size):
-            super(Attention, self).__init__()
-            self.device = device
-            self.hidden_size = hidden_size
+#     class Attention(nn.Module):
+#         def __init__(self, device, hidden_size):
+#             super(Attention, self).__init__()
+#             self.device = device
+#             self.hidden_size = hidden_size
 
-            self.concat_linear = nn.Linear(self.hidden_size * 2, self.hidden_size)
-            self.attn = nn.Linear(self.hidden_size, self.hidden_size)
+#             self.concat_linear = nn.Linear(self.hidden_size * 2, self.hidden_size)
+#             self.attn = nn.Linear(self.hidden_size, self.hidden_size)
 
-        def forward(self, rnn_outputs, final_hidden_state):        # 입력은 (h1 ~ h*, h* )
-            # rnn_output.shape:         (batch_size, seq_len, hidden_size)
-            # final_hidden_state.shape: (batch_size, hidden_size)
-            # NOTE: hidden_size may also reflect bidirectional hidden states (hidden_size = num_directions * hidden_dim)
-            batch_size, seq_len, _ = rnn_outputs.shape  # bidirect에서는 batch 2배
+#         def forward(self, rnn_outputs, final_hidden_state):        # 입력은 (h1 ~ h*, h* )
+#             # rnn_output.shape:         (batch_size, seq_len, hidden_size)
+#             # final_hidden_state.shape: (batch_size, hidden_size)
+#             # NOTE: hidden_size may also reflect bidirectional hidden states (hidden_size = num_directions * hidden_dim)
+#             batch_size, seq_len, _ = rnn_outputs.shape  # bidirect에서는 batch 2배
 
-            attn_weights = self.attn(rnn_outputs) # (batch_size, seq_len, hidden_dim)
-            attn_weights = torch.bmm(attn_weights, final_hidden_state.unsqueeze(2))   # unsqueeze(2)는 두번째 축을 만듬. 2차원 --> 3차원으로 (batch,hidden,1)
+#             attn_weights = self.attn(rnn_outputs) # (batch_size, seq_len, hidden_dim)
+#             attn_weights = torch.bmm(attn_weights, final_hidden_state.unsqueeze(2))   # unsqueeze(2)는 두번째 축을 만듬. 2차원 --> 3차원으로 (batch,hidden,1)
 
-            # bmm : 돌려서 행렬곱 시행함.   ---> 결과 alpha1, ~ alpha50까지 나옴.
-
-
-            attn_weights = F.softmax(attn_weights.squeeze(2), dim=1)
-
-            # alpha1*h1 + alpha2*h2 + ... alpha50*h50
-            context = torch.bmm(rnn_outputs.transpose(1, 2), attn_weights.unsqueeze(2)).squeeze(2)
-
-            # Wc 가 concat_linear 
-            attn_hidden = torch.tanh(self.concat_linear(torch.cat((context, final_hidden_state), dim=1)))
-
-            return attn_hidden, attn_weights
-
-    # GRU_Attention
-
-    class GRU_Attention(nn.Module):
-        def __init__(self, input_size, hidden_size, num_layers, num_classes, bidirectional, device):
-            super(GRU_Attention, self).__init__()
-            self.hidden_size = hidden_size
-            self.num_layers = num_layers
-            self.num_directions = 2 if bidirectional == True else 1
-
-            self.rnn = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, bidirectional=bidirectional)
-            self.attn = Attention(device, hidden_size * self.num_directions)   # 차이점 : Attention함수로 context vector를 도출하고 이결과가 fc로 들어감.
-            self.fc = nn.Linear(hidden_size * self.num_directions, num_classes)
-
-        def forward(self, x):
-            batch_size, _, seq_len = x.shape
-
-            # data dimension: (batch_size x input_size x seq_len) -> (batch_size x seq_len x input_size)로 변환
-            x = torch.transpose(x, 1, 2)
-
-            # initial hidden states 설정
-            h0 = torch.zeros(self.num_layers * self.num_directions, batch_size, self.hidden_size).to(device)
-
-            # out: tensor of shape (batch_size, seq_len, hidden_size)
-            rnn_output, hiddens = self.rnn(x, h0)    # 출력 둘중의 하나를 가지고 atten을 하게되는데...
-            final_state = hiddens.view(self.num_layers, self.num_directions, batch_size, self.hidden_size)[-1]
-                          # view는 shape을 변경하는 method임.                                             # -1은 num_layers중에서 마지막것을 가져오려고...    
-                          # bydirectional 구조에서 마지막 히든레이어의 정방향, 역방향 중 정방향 h를 가져온것 
-
-            # Handle directions
-            final_hidden_state = None
-            if self.num_directions == 1:   # 단뱡향
-                final_hidden_state = final_state.squeeze(0) # 0번째 축(차원)을 없앰. 
-            elif self.num_directions == 2: # 양방향
-                h_1, h_2 = final_state[0], final_state[1]
-                final_hidden_state = torch.cat((h_1, h_2), 1)  # Concatenate both states    64차원 2개를 이어붙여서 128차원으로 concat 함.
-
-            # final hidden state 기준으로 a 값들과의 상관도를 계산함.
-
-            # Push through attention layer
-            attn_output, attn_weights = self.attn(rnn_output, final_hidden_state)
-
-            attn_output = self.fc(attn_output)
-            return attn_output
-
-    # GRU 모델 구축
-    gru = GRU_Attention(input_size, hidden_size, num_layers, num_classes, bidirectional, device)
-    gru = gru.to(device)
-    if log_en:
-        print(gru)
-
-    """## 학습"""
-
-    def train_model(model, dataloaders, criterion, num_epochs, optimizer):
-        since = time.time()
-
-        val_acc_history = []
-
-        best_model_wts = copy.deepcopy(model.state_dict())
-        best_acc = 0.0
-
-        for epoch in range(num_epochs):
+#             # bmm : 돌려서 행렬곱 시행함.   ---> 결과 alpha1, ~ alpha50까지 나옴.
 
 
-            if epoch % 20==0 and log_en:
-                print('Epoch {}/{}'.format(epoch + 1, num_epochs))
-                print('-' * 10)
+#             attn_weights = F.softmax(attn_weights.squeeze(2), dim=1)
 
-            # 각 epoch마다 순서대로 training과 validation을 진행
-            for phase in ['train', 'val']:
-                if phase == 'train':
-                    model.train()  # 모델을 training mode로 설정
-                else:
-                    model.eval()   # 모델을 validation mode로 설정
+#             # alpha1*h1 + alpha2*h2 + ... alpha50*h50
+#             context = torch.bmm(rnn_outputs.transpose(1, 2), attn_weights.unsqueeze(2)).squeeze(2)
 
-                running_loss = 0.0
-                running_corrects = 0
-                running_total = 0
+#             # Wc 가 concat_linear 
+#             attn_hidden = torch.tanh(self.concat_linear(torch.cat((context, final_hidden_state), dim=1)))
 
-                # training과 validation 단계에 맞는 dataloader에 대하여 학습/검증 진행
-                for inputs, labels in dataloaders[phase]:
-                    inputs = inputs.to(device)
-                    labels = labels.to(device, dtype=torch.long)
+#             return attn_hidden, attn_weights
 
-                    # parameter gradients를 0으로 설정
-                    optimizer.zero_grad()
+#     # GRU_Attention
 
-                    # forward
-                    # training 단계에서만 gradient 업데이트 수행
-                    with torch.set_grad_enabled(phase == 'train'):
-                        # input을 model에 넣어 output을 도출한 후, loss를 계산함
-                        outputs = model(inputs)
-                        loss = criterion(outputs, labels)
+#     class GRU_Attention(nn.Module):
+#         def __init__(self, input_size, hidden_size, num_layers, num_classes, bidirectional, device):
+#             super(GRU_Attention, self).__init__()
+#             self.hidden_size = hidden_size
+#             self.num_layers = num_layers
+#             self.num_directions = 2 if bidirectional == True else 1
 
-                        # output 중 최댓값의 위치에 해당하는 class로 예측을 수행
-                        _, preds = torch.max(outputs, 1)
+#             self.rnn = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, bidirectional=bidirectional)
+#             self.attn = Attention(device, hidden_size * self.num_directions)   # 차이점 : Attention함수로 context vector를 도출하고 이결과가 fc로 들어감.
+#             self.fc = nn.Linear(hidden_size * self.num_directions, num_classes)
 
-                        # backward (optimize): training 단계에서만 수행
-                        if phase == 'train':
-                            loss.backward()
-                            optimizer.step()
+#         def forward(self, x):
+#             batch_size, _, seq_len = x.shape
 
-                    # batch별 loss를 축적함
-                    running_loss += loss.item() * inputs.size(0)
-                    running_corrects += torch.sum(preds == labels.data)
-                    running_total += labels.size(0)
+#             # data dimension: (batch_size x input_size x seq_len) -> (batch_size x seq_len x input_size)로 변환
+#             x = torch.transpose(x, 1, 2)
 
-                # epoch의 loss 및 accuracy 도출
-                epoch_loss = running_loss / running_total
-                epoch_acc = running_corrects.double() / running_total
+#             # initial hidden states 설정
+#             h0 = torch.zeros(self.num_layers * self.num_directions, batch_size, self.hidden_size).to(device)
 
-                if epoch % 20==0 and log_en:
-                    print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+#             # out: tensor of shape (batch_size, seq_len, hidden_size)
+#             rnn_output, hiddens = self.rnn(x, h0)    # 출력 둘중의 하나를 가지고 atten을 하게되는데...
+#             final_state = hiddens.view(self.num_layers, self.num_directions, batch_size, self.hidden_size)[-1]
+#                           # view는 shape을 변경하는 method임.                                             # -1은 num_layers중에서 마지막것을 가져오려고...    
+#                           # bydirectional 구조에서 마지막 히든레이어의 정방향, 역방향 중 정방향 h를 가져온것 
 
-                # validation 단계에서 validation loss가 감소할 때마다 best model 가중치를 업데이트함
-                if phase == 'val' and epoch_acc > best_acc:
-                    best_acc = epoch_acc
-                    best_model_wts = copy.deepcopy(model.state_dict())
-                if phase == 'val':
-                    val_acc_history.append(epoch_acc)
+#             # Handle directions
+#             final_hidden_state = None
+#             if self.num_directions == 1:   # 단뱡향
+#                 final_hidden_state = final_state.squeeze(0) # 0번째 축(차원)을 없앰. 
+#             elif self.num_directions == 2: # 양방향
+#                 h_1, h_2 = final_state[0], final_state[1]
+#                 final_hidden_state = torch.cat((h_1, h_2), 1)  # Concatenate both states    64차원 2개를 이어붙여서 128차원으로 concat 함.
 
-            # print()
+#             # final hidden state 기준으로 a 값들과의 상관도를 계산함.
 
-        # 전체 학습 시간 계산
-        time_elapsed = time.time() - since
-        if log_en:
-            print('GRU Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
-            print('Best val Acc: {:4f}'.format(best_acc))
+#             # Push through attention layer
+#             attn_output, attn_weights = self.attn(rnn_output, final_hidden_state)
 
-        # validation loss가 가장 낮았을 때의 best model 가중치를 불러와 best model을 구축함
-        model.load_state_dict(best_model_wts)
+#             attn_output = self.fc(attn_output)
+#             return attn_output
 
-        # best model 가중치 저장
-        # torch.save(best_model_wts, '../output/best_model.pt')
-        return model, val_acc_history
+#     # GRU 모델 구축
+#     gru = GRU_Attention(input_size, hidden_size, num_layers, num_classes, bidirectional, device)
+#     gru = gru.to(device)
+#     if log_en:
+#         print(gru)
 
-    # trining 단계에서 사용할 Dataloader dictionary 생성
-    dataloaders_dict = {
-        'train': train_loader,
-        'val': valid_loader
-    }
+#     """## 학습"""
 
-    # loss function 설정
-    criterion = nn.CrossEntropyLoss()
+#     def train_model(model, dataloaders, criterion, num_epochs, optimizer):
+#         since = time.time()
 
-    # GRU with attention 모델 학습
-    gru, gru_val_acc_history = train_model(gru, dataloaders_dict, criterion, num_epochs,
-                                           optimizer=optim.Adam(gru.parameters(), lr=0.001))
+#         val_acc_history = []
 
-    """## 검증"""
+#         best_model_wts = copy.deepcopy(model.state_dict())
+#         best_acc = 0.0
 
-    def test_model(model, test_loader):
-        model.eval()   # 모델을 validation mode로 설정
+#         for epoch in range(num_epochs):
 
-        # test_loader에 대하여 검증 진행 (gradient update 방지)
-        with torch.no_grad():
-            corrects = 0
-            total = 0
-            for inputs, labels in test_loader:
-                inputs = inputs.to(device)
-                labels = labels.to(device, dtype=torch.long)
 
-                # forward
-                # input을 model에 넣어 output을 도출
-                outputs = model(inputs)
+#             if epoch % 20==0 and log_en:
+#                 print('Epoch {}/{}'.format(epoch + 1, num_epochs))
+#                 print('-' * 10)
 
-                # output 중 최댓값의 위치에 해당하는 class로 예측을 수행
-                _, preds = torch.max(outputs, 1)
+#             # 각 epoch마다 순서대로 training과 validation을 진행
+#             for phase in ['train', 'val']:
+#                 if phase == 'train':
+#                     model.train()  # 모델을 training mode로 설정
+#                 else:
+#                     model.eval()   # 모델을 validation mode로 설정
 
-                # batch별 정답 개수를 축적함
-                corrects += torch.sum(preds == labels.data)
-                total += labels.size(0)
+#                 running_loss = 0.0
+#                 running_corrects = 0
+#                 running_total = 0
 
-        # accuracy를 도출함
-        test_acc = corrects.double() / total
-        if log_en:
-            print('GRU Testing Acc: {:.4f}'.format(test_acc))
+#                 # training과 validation 단계에 맞는 dataloader에 대하여 학습/검증 진행
+#                 for inputs, labels in dataloaders[phase]:
+#                     inputs = inputs.to(device)
+#                     labels = labels.to(device, dtype=torch.long)
+
+#                     # parameter gradients를 0으로 설정
+#                     optimizer.zero_grad()
+
+#                     # forward
+#                     # training 단계에서만 gradient 업데이트 수행
+#                     with torch.set_grad_enabled(phase == 'train'):
+#                         # input을 model에 넣어 output을 도출한 후, loss를 계산함
+#                         outputs = model(inputs)
+#                         loss = criterion(outputs, labels)
+
+#                         # output 중 최댓값의 위치에 해당하는 class로 예측을 수행
+#                         _, preds = torch.max(outputs, 1)
+
+#                         # backward (optimize): training 단계에서만 수행
+#                         if phase == 'train':
+#                             loss.backward()
+#                             optimizer.step()
+
+#                     # batch별 loss를 축적함
+#                     running_loss += loss.item() * inputs.size(0)
+#                     running_corrects += torch.sum(preds == labels.data)
+#                     running_total += labels.size(0)
+
+#                 # epoch의 loss 및 accuracy 도출
+#                 epoch_loss = running_loss / running_total
+#                 epoch_acc = running_corrects.double() / running_total
+
+#                 if epoch % 20==0 and log_en:
+#                     print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+
+#                 # validation 단계에서 validation loss가 감소할 때마다 best model 가중치를 업데이트함
+#                 if phase == 'val' and epoch_acc > best_acc:
+#                     best_acc = epoch_acc
+#                     best_model_wts = copy.deepcopy(model.state_dict())
+#                 if phase == 'val':
+#                     val_acc_history.append(epoch_acc)
+
+#             # print()
+
+#         # 전체 학습 시간 계산
+#         time_elapsed = time.time() - since
+#         if log_en:
+#             print('GRU Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+#             print('Best val Acc: {:4f}'.format(best_acc))
+
+#         # validation loss가 가장 낮았을 때의 best model 가중치를 불러와 best model을 구축함
+#         model.load_state_dict(best_model_wts)
+
+#         # best model 가중치 저장
+#         # torch.save(best_model_wts, '../output/best_model.pt')
+#         return model, val_acc_history
+
+#     # trining 단계에서 사용할 Dataloader dictionary 생성
+#     dataloaders_dict = {
+#         'train': train_loader,
+#         'val': valid_loader
+#     }
+
+#     # loss function 설정
+#     criterion = nn.CrossEntropyLoss()
+
+#     # GRU with attention 모델 학습
+#     gru, gru_val_acc_history = train_model(gru, dataloaders_dict, criterion, num_epochs,
+#                                            optimizer=optim.Adam(gru.parameters(), lr=0.001))
+
+#     """## 검증"""
+
+#     def test_model(model, test_loader):
+#         model.eval()   # 모델을 validation mode로 설정
+
+#         # test_loader에 대하여 검증 진행 (gradient update 방지)
+#         with torch.no_grad():
+#             corrects = 0
+#             total = 0
+#             for inputs, labels in test_loader:
+#                 inputs = inputs.to(device)
+#                 labels = labels.to(device, dtype=torch.long)
+
+#                 # forward
+#                 # input을 model에 넣어 output을 도출
+#                 outputs = model(inputs)
+
+#                 # output 중 최댓값의 위치에 해당하는 class로 예측을 수행
+#                 _, preds = torch.max(outputs, 1)
+
+#                 # batch별 정답 개수를 축적함
+#                 corrects += torch.sum(preds == labels.data)
+#                 total += labels.size(0)
+
+#         # accuracy를 도출함
+#         test_acc = corrects.double() / total
+#         if log_en:
+#             print('GRU Testing Acc: {:.4f}'.format(test_acc))
         
         
-        return test_acc
+#         return test_acc
         
         
 
-    # GRU with attention 모델 검증하기 (Acc: 0.8889)
-    # Benchmark model인 GRU(Acc: 0.8000)와 비교했을 때, Attetion의 적용이 성능 향상에 도움이 됨을 알 수 있음
-    Acc_GRU_valid = test_model(gru, test_loader)
+#     # GRU with attention 모델 검증하기 (Acc: 0.8889)
+#     # Benchmark model인 GRU(Acc: 0.8000)와 비교했을 때, Attetion의 적용이 성능 향상에 도움이 됨을 알 수 있음
+#     Acc_GRU_valid = test_model(gru, test_loader)
 
-    """## 별도의 Test Data로 검증"""
-    x_list = [ext_x]
+#     """## 별도의 Test Data로 검증"""
+#     x_list = [ext_x]
 
-    x_train_all,y_train_all,x_valid_all,y_valid_all,x_test_all,y_test_all = split_train_test(ext_x, ext_y, x_list, window_size)
+#     x_train_all,y_train_all,x_valid_all,y_valid_all,x_test_all,y_test_all = split_train_test(ext_x, ext_y, x_list, window_size)
 
-    """torch용 data 생성"""
-    no_of_data=400
+#     """torch용 data 생성"""
+#     no_of_data=400
 
-    x_train, y_train = chunk_merge(x_train_all,y_train_all,no_of_data)
-    x_valid, y_valid = chunk_merge(x_valid_all,y_valid_all,no_of_data)
-    x_test, y_test   = chunk_merge(x_test_all, y_test_all, no_of_data)
+#     x_train, y_train = chunk_merge(x_train_all,y_train_all,no_of_data)
+#     x_valid, y_valid = chunk_merge(x_valid_all,y_valid_all,no_of_data)
+#     x_test, y_test   = chunk_merge(x_test_all, y_test_all, no_of_data)
 
-    # train/validation/test 데이터를 window_size 시점 길이로 분할
-    datasets = []
-    for set in [(x_train, y_train), (x_valid, y_valid), (x_test, y_test)]:
-        # 전체 시간 길이 설정
-        T = set[0].shape[0]
+#     # train/validation/test 데이터를 window_size 시점 길이로 분할
+#     datasets = []
+#     for set in [(x_train, y_train), (x_valid, y_valid), (x_test, y_test)]:
+#         # 전체 시간 길이 설정
+#         T = set[0].shape[0]
 
-        # 전체 X 데이터를 window_size 크기의 time window로 분할
-        # split(array, indices_or_sections) 함수는 자투리 없이 딱 나누어 떨어져야 하므로, 400으로 나눠떨어지도록 자투리 처리, split은 딱 떨어져야 함..
-        # array 부분을   set[0].iloc[:window_size * (T // window_size),:] 로 slicing 먼저해주어야 함.
-        # windows = np.split(set[0].iloc[:window_size * (T // window_size),:], T // window_size, axis=0)  
-
-
-        x_sliced = set[0][:window_size * (T // window_size),:]
-        x_sliced_transposed = x_sliced.T
-        windows = np.split(x_sliced_transposed,T // window_size, axis=1) # axis=1 이면, 가로로 자름.
-
-        # split 하고난, windows는 list형태로 돌아가므로 다시 array 형태로 변환해야 함.
-        windows = np.concatenate(windows, axis=0) # axis=0 이면, 세로로 이어붙임.
-        if log_en:
-            print("windows_original:",windows.shape)
-        # print(windows[:7,:])
-        # windows = windows.reshape(window_size,7,-1)
-        windows = windows.reshape(-1,7,window_size)
-
-        if log_en:
-            print("windows_reshaped:",windows.shape)
-        # print(windows[0,:,:])
-
-        # 전체 y 데이터를 window_size 크기에 맞게 분할
-        # labels = np.split(set[1][:, :window_size * (T // window_size)], (T // window_size), -1) # y는 2차원이므로...
-        # labels = np.round(np.mean(np.concatenate(labels, 0), -1))  # 싯점마다 voting 해서 label 정의한다. 시간축(-1)기준으로 평균 class를 적용하는데, 여기서는 숫자이므로 나중에 round 처리로 함.
-
-        labels = np.split(set[1][:window_size * (T // window_size)], T // window_size) # y는 2차원이므로...
-        labels = np.round(np.mean((np.concatenate(labels, 0).reshape(-1,window_size)), -1))  # 싯점마다 voting 해서 label 정의한다. 시간축(-1)기준으로 평균 class를 적용하는데, 여기서는 숫자이므로 나중에 round 처리로 함.
-
-        labels = labels.astype(np.long)
-        # print(labels[0])
-
-        # shape 확인
-        if log_en:
-            print(windows.shape,labels.shape)
+#         # 전체 X 데이터를 window_size 크기의 time window로 분할
+#         # split(array, indices_or_sections) 함수는 자투리 없이 딱 나누어 떨어져야 하므로, 400으로 나눠떨어지도록 자투리 처리, split은 딱 떨어져야 함..
+#         # array 부분을   set[0].iloc[:window_size * (T // window_size),:] 로 slicing 먼저해주어야 함.
+#         # windows = np.split(set[0].iloc[:window_size * (T // window_size),:], T // window_size, axis=0)  
 
 
-        # sample data 확인 (마지막 15번 데이터)
-        if log_en:
-            print("sample data : last label")
-            print(windows[-1],labels[-1])
+#         x_sliced = set[0][:window_size * (T // window_size),:]
+#         x_sliced_transposed = x_sliced.T
+#         windows = np.split(x_sliced_transposed,T // window_size, axis=1) # axis=1 이면, 가로로 자름.
 
-        # 분할된 time window 단위의 X, y 데이터를 tensor 형태로 축적
-        datasets.append(torch.utils.data.TensorDataset(torch.Tensor(windows), torch.Tensor(labels)))
+#         # split 하고난, windows는 list형태로 돌아가므로 다시 array 형태로 변환해야 함.
+#         windows = np.concatenate(windows, axis=0) # axis=0 이면, 세로로 이어붙임.
+#         if log_en:
+#             print("windows_original:",windows.shape)
+#         # print(windows[:7,:])
+#         # windows = windows.reshape(window_size,7,-1)
+#         windows = windows.reshape(-1,7,window_size)
+
+#         if log_en:
+#             print("windows_reshaped:",windows.shape)
+#         # print(windows[0,:,:])
+
+#         # 전체 y 데이터를 window_size 크기에 맞게 분할
+#         # labels = np.split(set[1][:, :window_size * (T // window_size)], (T // window_size), -1) # y는 2차원이므로...
+#         # labels = np.round(np.mean(np.concatenate(labels, 0), -1))  # 싯점마다 voting 해서 label 정의한다. 시간축(-1)기준으로 평균 class를 적용하는데, 여기서는 숫자이므로 나중에 round 처리로 함.
+
+#         labels = np.split(set[1][:window_size * (T // window_size)], T // window_size) # y는 2차원이므로...
+#         labels = np.round(np.mean((np.concatenate(labels, 0).reshape(-1,window_size)), -1))  # 싯점마다 voting 해서 label 정의한다. 시간축(-1)기준으로 평균 class를 적용하는데, 여기서는 숫자이므로 나중에 round 처리로 함.
+
+#         labels = labels.astype(np.long)
+#         # print(labels[0])
+
+#         # shape 확인
+#         if log_en:
+#             print(windows.shape,labels.shape)
+
+
+#         # sample data 확인 (마지막 15번 데이터)
+#         if log_en:
+#             print("sample data : last label")
+#             print(windows[-1],labels[-1])
+
+#         # 분할된 time window 단위의 X, y 데이터를 tensor 형태로 축적
+#         datasets.append(torch.utils.data.TensorDataset(torch.Tensor(windows), torch.Tensor(labels)))
 
 
 
-    # train/validation/test DataLoader 구축
-    trainset, validset, testset = datasets[0], datasets[1], datasets[2]
-    train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True)
-    valid_loader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False)
-    test_loader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
+#     # train/validation/test DataLoader 구축
+#     trainset, validset, testset = datasets[0], datasets[1], datasets[2]
+#     train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True)
+#     valid_loader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False)
+#     test_loader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
 
-    # 모델 검증 (새로운 싯점 데이터 기준 )
-    Acc_GRU = test_model(gru, train_loader)
+#     # 모델 검증 (새로운 싯점 데이터 기준 )
+#     Acc_GRU = test_model(gru, train_loader)
 
-    print("STATUS : GRU 완료")    
+#     print("STATUS : GRU 완료")    
     
     
     
@@ -1385,59 +1385,59 @@ def my_models_2(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
 #         # windows = np.split(set[0].iloc[:window_size * (T // window_size),:], T // window_size, axis=0)  
 
 
-#         x_sliced = set[0][:window_size * (T // window_size),:]
-#         x_sliced_transposed = x_sliced.T
-#         windows = np.split(x_sliced_transposed,T // window_size, axis=1) # axis=1 이면, 가로로 자름.
+        x_sliced = set[0][:window_size * (T // window_size),:]
+        x_sliced_transposed = x_sliced.T
+        windows = np.split(x_sliced_transposed,T // window_size, axis=1) # axis=1 이면, 가로로 자름.
 
-#         # split 하고난, windows는 list형태로 돌아가므로 다시 array 형태로 변환해야 함.
-#         windows = np.concatenate(windows, axis=0) # axis=0 이면, 세로로 이어붙임.
-#         if log_en:
-#              print("windows_original:",windows.shape)
-#         # print(windows[:7,:])
-#         # windows = windows.reshape(window_size,7,-1)
-#         windows = windows.reshape(-1,7,window_size)
+        # split 하고난, windows는 list형태로 돌아가므로 다시 array 형태로 변환해야 함.
+        windows = np.concatenate(windows, axis=0) # axis=0 이면, 세로로 이어붙임.
+        if log_en:
+             print("windows_original:",windows.shape)
+        # print(windows[:7,:])
+        # windows = windows.reshape(window_size,7,-1)
+        windows = windows.reshape(-1,7,window_size)
 
-#         if log_en:
-#              print("windows_reshaped:",windows.shape)
-#         # print(windows[0,:,:])
+        if log_en:
+             print("windows_reshaped:",windows.shape)
+        # print(windows[0,:,:])
 
-#         # 전체 y 데이터를 window_size 크기에 맞게 분할
-#         # labels = np.split(set[1][:, :window_size * (T // window_size)], (T // window_size), -1) # y는 2차원이므로...
-#         # labels = np.round(np.mean(np.concatenate(labels, 0), -1))  # 싯점마다 voting 해서 label 정의한다. 시간축(-1)기준으로 평균 class를 적용하는데, 여기서는 숫자이므로 나중에 round 처리로 함.
+        # 전체 y 데이터를 window_size 크기에 맞게 분할
+        # labels = np.split(set[1][:, :window_size * (T // window_size)], (T // window_size), -1) # y는 2차원이므로...
+        # labels = np.round(np.mean(np.concatenate(labels, 0), -1))  # 싯점마다 voting 해서 label 정의한다. 시간축(-1)기준으로 평균 class를 적용하는데, 여기서는 숫자이므로 나중에 round 처리로 함.
 
-#         labels = np.split(set[1][:window_size * (T // window_size)], T // window_size) # y는 2차원이므로...
-#         labels = np.round(np.mean((np.concatenate(labels, 0).reshape(-1,window_size)), -1))  # 싯점마다 voting 해서 label 정의한다. 시간축(-1)기준으로 평균 class를 적용하는데, 여기서는 숫자이므로 나중에 round 처리로 함.
+        labels = np.split(set[1][:window_size * (T // window_size)], T // window_size) # y는 2차원이므로...
+        labels = np.round(np.mean((np.concatenate(labels, 0).reshape(-1,window_size)), -1))  # 싯점마다 voting 해서 label 정의한다. 시간축(-1)기준으로 평균 class를 적용하는데, 여기서는 숫자이므로 나중에 round 처리로 함.
 
-#         labels = labels.astype(np.long)
-#         # print(labels[0])
+        labels = labels.astype(np.long)
+        # print(labels[0])
 
-#         # shape 확인
-#         if log_en:
-#             print(windows.shape,labels.shape)
-
-
-#         # sample data 확인 (마지막 15번 데이터)
-#         if log_en:
-#             print("sample data : last label")
-#             print(windows[-1],labels[-1])
-
-#         # 분할된 time window 단위의 X, y 데이터를 tensor 형태로 축적
-#         datasets.append(torch.utils.data.TensorDataset(torch.Tensor(windows), torch.Tensor(labels)))
+        # shape 확인
+        if log_en:
+            print(windows.shape,labels.shape)
 
 
+        # sample data 확인 (마지막 15번 데이터)
+        if log_en:
+            print("sample data : last label")
+            print(windows[-1],labels[-1])
 
-#     # train/validation/test DataLoader 구축
-#     trainset, validset, testset = datasets[0], datasets[1], datasets[2]
-#     train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True)
-#     valid_loader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False)
-#     test_loader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
+        # 분할된 time window 단위의 X, y 데이터를 tensor 형태로 축적
+        datasets.append(torch.utils.data.TensorDataset(torch.Tensor(windows), torch.Tensor(labels)))
 
-#     # 모델 검증 (새로운 싯점 데이터 기준 )
-#     Acc_Incpt = test_model(InceptionTime, train_loader)
-#     print("STATUS : Inception 완료")
-#     # 별도의 Test Data 결과 비교
+
+
+    # train/validation/test DataLoader 구축
+    trainset, validset, testset = datasets[0], datasets[1], datasets[2]
+    train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True)
+    valid_loader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
+
+    # 모델 검증 (새로운 싯점 데이터 기준 )
+    Acc_Incpt = test_model(InceptionTime, train_loader)
+    print("STATUS : Inception 완료")
+    # 별도의 Test Data 결과 비교
 #     return Acc_1D_CNN_valid, Acc_1D_CNN, Acc_GRU_valid, Acc_GRU, Acc_Incpt_valid, Acc_Incpt
 
 #     return Acc_1D_CNN_valid, Acc_1D_CNN
-    return Acc_GRU_valid, Acc_GRU
+    return Acc_Incpt_valid, Acc_Incpt
  
