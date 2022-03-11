@@ -12,7 +12,7 @@
 3차 (3월) Data Augmentation 과 CNN계열 Accuracy 비교
 * 1D CNN,GRU,Inception 모형 기반 Test Accuracy 비교 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/caplove/DX_team_4_repo/blob/main/Team_4_Augment_DNN_simple2.ipynb)
 
-
+* 데이터분석 - 시계열 분포, RTC control chart [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/caplove/DX_team_4_repo/blob/main/Team_4_데이터분석.ipynb)
 
 
 
