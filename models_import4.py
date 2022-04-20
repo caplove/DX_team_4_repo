@@ -246,7 +246,7 @@ def my_models_1D_CNN(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
     
     
     
-     """ 1D CNN"""
+    """ 1D CNN"""
 
     ## 모형 설계
 
