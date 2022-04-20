@@ -1,5 +1,5 @@
 #
-# models_import4.py
+# models_import3.py
 # my_models_2(x,y,x_list,log_en,external_test_data=0,ext_x,ext_y)
 # x, y는 원본데이터
 # x_list는 [원본 x, 증강 x1, 증강 x2, ...]
@@ -32,10 +32,10 @@ def my_models_1D_CNN(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
 
 
     # Hyperparameter setting
-    batch_size = 10
+    batch_size = 100
     num_classes = 16
-    num_epochs = 200
-    window_size = 50  # 22.03.21
+    num_epochs = 400
+    window_size = 400  # 22.03.21
 
     random_seed = 42
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # Detect if we have a GPU available
@@ -274,7 +274,7 @@ def my_models_1D_CNN(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
             # fully-connected layer 구축
             # self.fc = nn.Linear(64 * 11, num_classes)
             # self.fc = nn.Linear(64 * 1, num_classes)
-            self.fc = nn.Linear(160, num_classes)            # 아래 훈련단계에서 에러날경우, nn.Liner(0000, num_classes)  0000 을 에러로그를 보고 바꾼다.(주의)
+            self.fc = nn.Linear(2976, num_classes)            # 아래 훈련단계에서 에러날경우, nn.Liner(0000, num_classes)  0000 을 에러로그를 보고 바꾼다.(주의)
 
         def forward(self, x):
             out = self.layer1(x)
@@ -505,7 +505,7 @@ def my_models_1D_CNN(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
 
     print("STATUS : 1D_CNN 모형 완료")
 
-    return np.max(val_acc_history_CNN), Acc_CNN_valid, Acc_CNN_external_data
+    return np.max(val_acc_history_CNN), Acc_1D_CNN_valid, Acc_1D_CNN_external_data
     
     
     
@@ -551,10 +551,10 @@ def my_models_GRU(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
 
 
     # Hyperparameter setting
-    batch_size = 10
+    batch_size = 100
     num_classes = 16
-    num_epochs = 200
-    window_size = 50  # 22.03.21
+    num_epochs = 400
+    window_size = 400  # 22.03.21
 
     random_seed = 42
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # Detect if we have a GPU available
@@ -1147,10 +1147,10 @@ def my_models_Incept(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
 
 
     # Hyperparameter setting
-    batch_size = 10
+    batch_size = 100
     num_classes = 16
-    num_epochs = 200
-    window_size = 50  # 22.03.21
+    num_epochs = 400
+    window_size = 400  # 22.03.21
 
     random_seed = 42
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # Detect if we have a GPU available
