@@ -533,7 +533,7 @@ def my_models_1D_CNN(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
     
     
     
-   def my_models_GRU(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
+def my_models_GRU(x,y,x_list,log_en,external_test_data=0,ext_x=[],ext_y=[]):
 
     """1. 데이터 가공부"""
  
