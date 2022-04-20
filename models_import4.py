@@ -1,16 +1,4 @@
-#
-# models_import3.py
-# my_models_2(x,y,x_list,log_en,external_test_data=0,ext_x,ext_y)
-# x, y는 원본데이터
-# x_list는 [원본 x, 증강 x1, 증강 x2, ...]
-# 모형은 1D-CNN, GRU /w Attention, Inception
-#
-#
-# 1. 데이터 가공부 : x,y,x_list  --> train / valid / test용 로더 구축
-# 2. 
-
-
-
+# models_import4.py
 
 
 
